@@ -14,56 +14,74 @@ import ParticlesBg from 'particles-bg';
 //   apiKey: '335c9368a9064297b86485adb8ea1fad'
 // });
 
-const returnClarifaiRequestOptions = (imageUrl) => {
-  // Your PAT (Personal Access Token) can be found in the portal under Authentification
-  const PAT = 'ff3551eda0004f9aa81429e9b2e46fa7';
-  // Specify the correct user_id/app_id pairings
-  // Since you're making inferences outside your app's scope
-  const USER_ID = '2a53leyyvgvc';       
-  const APP_ID = 'detectify';
-  // Change these to whatever model and image URL you want to use
-  const MODEL_ID = 'face-detection';
-  const IMAGE_URL = imageUrl;
+// const returnClarifaiRequestOptions = (imageUrl) => {
+//   // Your PAT (Personal Access Token) can be found in the portal under Authentification
+//   const PAT = 'ff3551eda0004f9aa81429e9b2e46fa7';
+//   // Specify the correct user_id/app_id pairings
+//   // Since you're making inferences outside your app's scope
+//   const USER_ID = '2a53leyyvgvc';       
+//   const APP_ID = 'detectify';
+//   // Change these to whatever model and image URL you want to use
+//   const MODEL_ID = 'face-detection';
+//   const IMAGE_URL = imageUrl;
 
-  const raw = JSON.stringify({
-    "user_app_id": {
-        "user_id": USER_ID,
-        "app_id": APP_ID
-    },
-    "inputs": [
-        {
-            "data": {
-                "image": {
-                    "url": IMAGE_URL
-                }
-            }
-        }
-    ]
-  });
+//   const raw = JSON.stringify({
+//     "user_app_id": {
+//         "user_id": USER_ID,
+//         "app_id": APP_ID
+//     },
+//     "inputs": [
+//         {
+//             "data": {
+//                 "image": {
+//                     "url": IMAGE_URL
+//                 }
+//             }
+//         }
+//     ]
+//   });
 
-  const requestOptions = {
-    method: 'POST',
-    headers: {
-        'Accept': 'application/json',
-        'Authorization': 'Key ' + PAT
-    },
-    body: raw
-  };
+//   const requestOptions = {
+//     method: 'POST',
+//     headers: {
+//         'Accept': 'application/json',
+//         'Authorization': 'Key ' + PAT
+//     },
+//     body: raw
+//   };
   
-  return requestOptions;
-}
+//   return requestOptions;
+// }
     
+const initialState = {
+  input: '',
+  imageUrl: '',
+  boxes: [],
+  route: 'signin',
+  isSignedIn: false,
+  user: {
+    id: '',
+    name: '',
+    email: '',
+    entries: 0,
+    joined: ''
+  }
+}
 
 class App extends Component {
   constructor() {
     super();
-    this.state = {
-      input: '',
-      imageUrl: '',
-      boxes: [],
-      route: 'signin',
-      isSignedIn: false
-    }
+    this.state = initialState;
+  }
+
+  loadUser = (data) => {
+    this.setState({user: {
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      entries: data.entries,
+      joined: data.joined
+    }})
   }
 
   calculateFaceLocation = (data) => {
@@ -89,7 +107,7 @@ class App extends Component {
   }
 
   displayFaceBox = (boxes) => {
-    console.log(boxes);
+    // console.log(boxes);
     this.setState({boxes : boxes});
   }
 
@@ -100,15 +118,41 @@ class App extends Component {
   onButtonSubmit = () => {
     this.setState({imageUrl: this.state.input});
     // app.models.predict('face-detection', this.state.input)
-    fetch("https://api.clarifai.com/v2/models/" + 'face-detection' + "/outputs", returnClarifaiRequestOptions(this.state.input))
-        .then(response => response.json())
-        .then(response => this.displayFaceBox(this.calculateFaceLocation(response)))
-        .catch(err => console.log(err));
+    fetch('http://localhost:3000/imageurl', {
+      method: 'post',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+          input: this.state.input
+      })
+    })
+    // fetch("https://api.clarifai.com/v2/models/" + 'face-detection' + "/outputs", returnClarifaiRequestOptions(this.state.input))
+      //First response (from clarifai API)
+      .then(response => response.json())
+      .then(response => {
+        // console.log(response);
+        if(response) {
+          fetch('http://localhost:3000/image', {
+            method: 'put',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                id: this.state.user.id
+            })
+          })
+          //Second response (from in-house API)
+          .then(response => response.json())
+          .then(count => {
+            this.setState(Object.assign(this.state.user, { entries: count }))
+          })
+          .catch(console.log);
+        }
+        this.displayFaceBox(this.calculateFaceLocation(response));
+      })
+      .catch(err => console.log(err));
   }
 
   onRouteChange = (route) => {
     if (route === 'signin') {
-      this.setState({isSignedIn: false});
+      this.setState(initialState);
     } else if (route === 'home') {
       this.setState({isSignedIn: true});
     }
@@ -120,12 +164,12 @@ class App extends Component {
     return (
       <div className="App">
         <ParticlesBg type="cobweb" bg={true} />
-        <Navigation isSignedIn={isSignedIn} onRouteChange={this.onRouteChange}/>
+        <Navigation isSignedIn={isSignedIn} onRouteChange={this.onRouteChange} user={this.state.user}/>
         { 
           route === 'home' 
           ? <div>
           <Logo />
-          <Rank />
+          <Rank name={this.state.user.name} entries={this.state.user.entries} />
           <ImageLinkForm 
             onInputChange={this.onInputChange} 
             onButtonSubmit={this.onButtonSubmit} 
@@ -134,8 +178,8 @@ class App extends Component {
           </div> 
           : (
             route === 'signin' 
-            ? <Signin onRouteChange={this.onRouteChange} /> 
-            : <Register onRouteChange={this.onRouteChange} />
+            ? <Signin onRouteChange={this.onRouteChange} loadUser={this.loadUser} /> 
+            : <Register onRouteChange={this.onRouteChange} loadUser={this.loadUser} />
           )
           
         }
